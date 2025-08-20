@@ -60,3 +60,4 @@ test_output/
 # Output
 captions/
 captioning_summary.json
+informative_drawings/__pycache__
