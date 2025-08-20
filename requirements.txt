@@ -6,38 +6,29 @@ click>=8.0.0
 
 # AI/ML APIs
 openai>=1.0.0
-google-generativeai>=0.8.0
-groq>=0.4.0
+anthropic>=0.3.0
+google-generativeai>=0.3.0
 
 # Image processing
-Pillow>=9.0.0
-opencv-python>=4.8.0
+pillow>=9.0.0
 
 # Utilities
 tqdm>=4.65.0
 python-dotenv>=1.0.0
 
-# Deep Learning (for informative-drawings module)
-# Note: PyTorch versions must match exactly across torch, torchvision, and torchaudio
-# torch==2.2.0
-# torchvision==0.17.0
-# torchaudio==2.2.0
-numpy>=1.21.0
-scipy>=1.7.0
+pytorch
+torchvision
+torchaudio
+numpy
+scipy
+tensorboard
+pillow
+opencv
+scikit-learn 
 
-# Additional ML/AI tools
-scikit-learn>=1.0.0
-git+https://github.com/openai/CLIP.git
-
-# Web and visualization utilities
-tensorboard>=2.10.0
-dominate>=2.6.0
-
-# Data processing
-oyaml>=1.0
-ftfy>=6.0.0
-regex>=2022.0.0
-ninja>=1.10.0
-
-# Standard library backports (Python < 3.9 compatibility)
-typing-extensions>=4.0.0
+oyaml
+dominate
+ninja
+ftfy
+tqdm
+regex

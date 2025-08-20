@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Image Captioning Pipeline
+Image Captioning and Sketch Generation Pipeline
 
 A comprehensive pipeline that uses multiple LLM models to generate and merge image captions.
+Also supports sketch generation using the informative-drawings model.
 Supports single images or batch processing of image folders.
 """
 
@@ -17,7 +18,16 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 import time
 
-from captioners import OpenAICaptioner, FacebookCaptioner, GoogleCaptioner, CaptionMerger
+from sketch_generator import SketchGenerator
+
+# Conditional imports for captioning (only when needed)
+def import_captioners():
+    """Import captioning modules only when needed"""
+    try:
+        from captioners import OpenAICaptioner, FacebookCaptioner, GoogleCaptioner, CaptionMerger
+        return OpenAICaptioner, FacebookCaptioner, GoogleCaptioner, CaptionMerger
+    except ImportError as e:
+        raise ImportError(f"Failed to import captioning modules: {e}. Please check your environment setup.")
 
 
 class ImageCaptioningPipeline:
@@ -27,6 +37,8 @@ class ImageCaptioningPipeline:
         self.config = config
         self.captioners = []
         self.merger = None
+        # Import captioning modules
+        self.OpenAICaptioner, self.FacebookCaptioner, self.GoogleCaptioner, self.CaptionMerger = import_captioners()
         self._initialize_models()
     
     def _initialize_models(self):
@@ -35,7 +47,7 @@ class ImageCaptioningPipeline:
             # Initialize captioners
             if self.config.get('openai_api_key'):
                 self.captioners.append(
-                    OpenAICaptioner(
+                    self.OpenAICaptioner(
                         self.config['gemini_api_key'],
                         self.config.get('caption_model_3', 'gemini-2.5-flash')
                     )
@@ -43,7 +55,7 @@ class ImageCaptioningPipeline:
             
             if self.config.get('groq_api_key'):
                 self.captioners.append(
-                    FacebookCaptioner(
+                    self.FacebookCaptioner(
                         self.config['groq_api_key'],
                         self.config.get('caption_model_2', 'llama-3.1-8b-instant')
                     )
@@ -51,7 +63,7 @@ class ImageCaptioningPipeline:
             
             if self.config.get('gemini_api_key'):
                 self.captioners.append(
-                    GoogleCaptioner(
+                    self.GoogleCaptioner(
                         self.config['gemini_api_key'],
                         self.config.get('caption_model_3', 'gemini-2.5-flash')
                     )
@@ -59,7 +71,7 @@ class ImageCaptioningPipeline:
             
             # Initialize merger (using OpenAI by default)
             if self.config.get('gemini_api_key'):
-                self.merger = CaptionMerger(
+                self.merger = self.CaptionMerger(
                     self.config['gemini_api_key'],
                     self.config.get('merge_model', 'gemini-2.5-flash')
                 )
@@ -241,79 +253,138 @@ def load_config() -> Dict[str, str]:
               type=click.Choice(['folder', 'filename', 'manual']),
               help='Source for additional context: folder name, filename, or manual input')
 @click.option('--config-file', help='Path to custom config file (optional)')
-def main(input, output, user_caption, caption_source, config_file):
+@click.option('--generate-sketches', '-s', is_flag=True, help='Generate sketches using informative-drawings model')
+@click.option('--sketch-model', default='anime_style', help='Name of the sketch generation model (default: anime_style)')
+@click.option('--caption-only', is_flag=True, help='Only generate captions, skip sketch generation')
+@click.option('--sketch-only', is_flag=True, help='Only generate sketches, skip caption generation')
+def main(input, output, user_caption, caption_source, config_file, generate_sketches, sketch_model, caption_only, sketch_only):
     """
-    Image Captioning Pipeline
+    Image Captioning and Sketch Generation Pipeline
     
-    Generate captions for images using multiple LLM models and merge them into
-    comprehensive descriptions.
+    Generate captions for images using multiple LLM models and optionally convert images to sketches.
     
     Examples:
     
-    Single image:
+    Caption generation only:
     python pipeline.py -i /path/to/image.jpg -o /path/to/output
     
-    Folder of images:
-    python pipeline.py -i /path/to/images/ -o /path/to/output
+    Caption and sketch generation:
+    python pipeline.py -i /path/to/image.jpg -o /path/to/output --generate-sketches
     
-    Dataset structure:
-    python pipeline.py -i /path/to/dataset/ -o /path/to/output
+    Sketch generation only:
+    python pipeline.py -i /path/to/image.jpg -o /path/to/output --sketch-only
+    
+    Folder processing with sketches:
+    python pipeline.py -i /path/to/images/ -o /path/to/output --generate-sketches --sketch-model anime_style
     """
     
     try:
-        # Load configuration
-        config = load_config()
-        
-        # Validate that we have at least one API key
-        if not any([config['groq_api_key'], config['gemini_api_key']]):
-            click.echo("Error: No API keys found. Please set up your .env file with at least one API key.")
-            click.echo("Copy .env.example to .env and fill in your API keys.")
+        # Validate conflicting options
+        if caption_only and sketch_only:
+            click.echo("Error: Cannot specify both --caption-only and --sketch-only")
             sys.exit(1)
         
-        # Initialize pipeline
-        pipeline = ImageCaptioningPipeline(config)
+        # Determine what to generate
+        should_generate_captions = not sketch_only
+        should_generate_sketches = generate_sketches or sketch_only
         
         input_path = Path(input)
         
-        if input_path.is_file():
-            # Single image processing
-            click.echo(f"Processing single image: {input_path}")
-            
-            if caption_source == 'manual':
-                user_context = user_caption
-            elif caption_source == 'filename':
-                user_context = input_path.stem
-            else:
-                user_context = input_path.parent.name
-            
-            result = pipeline.process_single_image(str(input_path), user_context, output)
-            
-            if result['success']:
-                click.echo("\n✓ Processing completed successfully!")
-                click.echo(f"Merged caption: {result['merged_caption']}")
-            else:
-                click.echo(f"\n✗ Processing failed: {result.get('error', 'Unknown error')}")
+        # Handle sketch-only mode
+        if sketch_only:
+            click.echo("🎨 Sketch generation mode")
+            try:
+                sketch_generator = SketchGenerator(model_name=sketch_model)
+                output_dir = Path(output) if output else Path("output")
+                output_dir.mkdir(parents=True, exist_ok=True)
                 
-        elif input_path.is_dir():
-            # Folder processing
-            click.echo(f"Processing folder: {input_path}")
+                if input_path.is_file():
+                    result = sketch_generator.process_single_image(str(input_path), str(output_dir))
+                else:
+                    result = sketch_generator.generate_sketches(str(input_path), str(output_dir))
+                
+                if result["success"]:
+                    click.echo("✅ Sketch generation completed!")
+                    if "final_sketch_path" in result:
+                        click.echo(f"Sketch saved to: {result['final_sketch_path']}")
+                    elif "sketches_generated" in result:
+                        click.echo(f"Generated {result['sketches_generated']} sketches in: {result['output_dir']}")
+                else:
+                    click.echo(f"❌ Sketch generation failed: {result['error']}")
+                    
+            except Exception as e:
+                click.echo(f"❌ Sketch generation error: {str(e)}")
+                sys.exit(1)
+            return
+        
+        # Load configuration for caption generation
+        if should_generate_captions:
+            config = load_config()
             
-            if caption_source == 'manual':
-                caption_src = 'folder'  # Default for batch processing
+            # Validate that we have at least one API key
+            if not any([config['groq_api_key'], config['gemini_api_key']]):
+                click.echo("Error: No API keys found. Please set up your .env file with at least one API key.")
+                click.echo("Copy .env.example to .env and fill in your API keys.")
+                sys.exit(1)
+        
+        # Initialize combined pipeline
+        if should_generate_captions and should_generate_sketches:
+            click.echo("🚀 Starting combined caption and sketch generation pipeline")
+            config = load_config()
+            combined_pipeline = CombinedPipeline(config, sketch_model)
+            
+            result = combined_pipeline.process_with_sketches(
+                str(input_path), 
+                output,
+                caption_source,
+                user_caption,
+                generate_sketches=True
+            )
+            
+            if result["success"]:
+                click.echo("✅ Combined pipeline completed successfully!")
             else:
-                caption_src = caption_source
+                click.echo(f"❌ Combined pipeline failed: {result.get('error', 'Unknown error')}")
+                
+        elif should_generate_captions:
+            # Caption generation only
+            click.echo("🖊️  Caption generation mode")
+            config = load_config()
+            pipeline = ImageCaptioningPipeline(config)
             
-            results = pipeline.process_image_folder(str(input_path), output, caption_src)
-            
-            successful = len([r for r in results if r.get('success', False)])
-            total = len(results)
-            
-            click.echo(f"\n✓ Processing completed!")
-            click.echo(f"Successfully processed: {successful}/{total} images")
-            
-            if output:
-                click.echo(f"Captions saved to: {output}/captions/")
-                click.echo(f"Summary saved to: {output}/captioning_summary.json")
+            if input_path.is_file():
+                if caption_source == 'manual':
+                    user_context = user_caption
+                elif caption_source == 'filename':
+                    user_context = input_path.stem
+                else:
+                    user_context = input_path.parent.name
+                
+                result = pipeline.process_single_image(str(input_path), user_context, output)
+                
+                if result['success']:
+                    click.echo("✅ Caption generation completed successfully!")
+                    click.echo(f"Merged caption: {result['merged_caption']}")
+                else:
+                    click.echo(f"❌ Caption generation failed: {result.get('error', 'Unknown error')}")
+                    
+            elif input_path.is_dir():
+                if caption_source == 'manual':
+                    caption_src = 'folder'
+                else:
+                    caption_src = caption_source
+                
+                results = pipeline.process_image_folder(str(input_path), output, caption_src)
+                
+                successful = len([r for r in results if r.get('success', False)])
+                total = len(results)
+                
+                click.echo(f"✅ Caption generation completed!")
+                click.echo(f"Successfully processed: {successful}/{total} images")
+                
+                if output:
+                    click.echo(f"Captions saved to: {output}/captions/")
+                    click.echo(f"Summary saved to: {output}/captioning_summary.json")
         
         else:
             click.echo(f"Error: Input path does not exist: {input_path}")

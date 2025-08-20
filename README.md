@@ -1,16 +1,24 @@
-# Image Captioning Pipeline
+# Image Captioning and Sketch Generation Pipeline
 
-A comprehensive Python pipeline that uses multiple Large Language Model (LLM) APIs to generate and merge image captions. The pipeline generates captions from 3 different LLM models and then uses the strongest model to merge them into a single, comprehensive caption without duplicated information.
+A comprehensive Python pipeline that uses multiple Large Language Model (LLM) APIs to generate and merge image captions, and optionally converts images to sketches using the informative-drawings model. The pipeline generates captions from multiple LLM models and merges them into a single, comprehensive caption. It can also independently generate artistic sketches from input images.
 
 ## Features
 
-- **Multi-Model Captioning**: Uses OpenAI GPT-4 Vision, Anthropic Claude 3, and Google Gemini Pro Vision
+### Captioning Features
+- **Multi-Model Captioning**: Uses OpenAI GPT-4 Vision, Google Gemini Pro Vision, and Groq models
 - **Intelligent Merging**: Combines multiple captions into one comprehensive description
 - **Batch Processing**: Process single images or entire folders
 - **Dataset Structure Support**: Works with organized dataset structures
 - **Command Line Interface**: Easy-to-use CLI with various options
 - **Flexible Context**: Uses folder names or filenames as additional context
 - **Progress Tracking**: Real-time progress bars for batch processing
+
+### Sketch Generation Features
+- **Image-to-Sketch Translation**: Convert photos to artistic sketches using deep learning
+- **Multiple Model Support**: Support for different artistic styles (anime_style, etc.)
+- **Batch Processing**: Process entire folders of images
+- **Independent Operation**: Can run sketch generation independently of captioning
+- **Combined Pipeline**: Run both captioning and sketch generation together
 
 ## Dataset Structure
 
@@ -64,14 +72,18 @@ python pipeline.py [OPTIONS]
 
 #### Options:
 - `--input, -i`: Path to image file or folder containing images (required)
-- `--output, -o`: Output directory for captions (optional)
+- `--output, -o`: Output directory for captions and sketches (optional)
 - `--user-caption, -c`: Additional caption context from user (optional)
 - `--caption-source`: Source for additional context - 'folder', 'filename', or 'manual' (default: 'folder')
+- `--generate-sketches, -s`: Generate sketches using informative-drawings model (flag)
+- `--sketch-model`: Name of the sketch generation model (default: anime_style)
+- `--caption-only`: Only generate captions, skip sketch generation (flag)
+- `--sketch-only`: Only generate sketches, skip caption generation (flag)
 - `--config-file`: Path to custom config file (optional)
 
 ### Examples
 
-#### Single Image Processing
+#### Caption Generation Only
 ```bash
 # Basic single image captioning
 python pipeline.py -i /path/to/image.jpg
@@ -81,15 +93,33 @@ python pipeline.py -i /path/to/image.jpg -o /path/to/output
 
 # With custom user caption
 python pipeline.py -i /path/to/image.jpg -c "A photo from my vacation" -o /path/to/output
-```
 
-#### Folder Processing
-```bash
 # Process all images in a folder
 python pipeline.py -i /path/to/images/ -o /path/to/output
+```
+
+#### Sketch Generation Only
+```bash
+# Generate sketch for single image
+python pipeline.py -i /path/to/image.jpg -o /path/to/output --sketch-only
+
+# Generate sketches for all images in folder
+python pipeline.py -i /path/to/images/ -o /path/to/output --sketch-only
+
+# Use specific sketch model
+python pipeline.py -i /path/to/images/ -o /path/to/output --sketch-only --sketch-model anime_style
+```
+
+#### Combined Caption and Sketch Generation
+```bash
+# Generate both captions and sketches for single image
+python pipeline.py -i /path/to/image.jpg -o /path/to/output --generate-sketches
+
+# Process folder with both captions and sketches
+python pipeline.py -i /path/to/images/ -o /path/to/output --generate-sketches --sketch-model anime_style
 
 # Use folder name as context
-python pipeline.py -i /path/to/vacation_photos/ -o /path/to/output --caption-source folder
+python pipeline.py -i /path/to/vacation_photos/ -o /path/to/output --generate-sketches --caption-source folder
 
 # Use filenames as context
 python pipeline.py -i /path/to/images/ -o /path/to/output --caption-source filename
@@ -97,27 +127,52 @@ python pipeline.py -i /path/to/images/ -o /path/to/output --caption-source filen
 
 #### Dataset Processing
 ```bash
-# Process dataset with /images and /captions structure
+# Process dataset with /images and /captions structure (captions only)
 python pipeline.py -i /path/to/dataset/ -o /path/to/output
+
+# Process dataset with both captions and sketches
+python pipeline.py -i /path/to/dataset/ -o /path/to/output --generate-sketches
 ```
 
-## API Configuration
+## Configuration
 
-The pipeline supports three LLM providers:
+### API Configuration
 
-### Required API Keys
-- **OpenAI**: Required for caption merging, optional for captioning
-- **Anthropic**: Optional for captioning
-- **Google**: Optional for captioning
+The pipeline supports multiple LLM providers for caption generation:
 
-### Model Configuration
+#### Required API Keys (for captioning)
+- **Google Gemini**: Required for caption generation and merging
+- **Groq**: Optional for additional caption generation
+- **OpenAI**: Optional for additional caption generation
+
+#### Model Configuration
 You can customize which models to use in your `.env` file:
 
 ```
 # Caption generation models
-CAPTION_MODEL_1=gpt-4-vision-preview
-CAPTION_MODEL_2=claude-3-sonnet-20240229
-CAPTION_MODEL_3=gemini-pro-vision
+CAPTION_MODEL_1=gemma-3-27b-it
+CAPTION_MODEL_2=meta-llama/llama-4-scout-17b-16e-instruct  
+CAPTION_MODEL_3=gemini-2.5-flash
+
+# Model for merging captions
+MERGE_MODEL=gemini-2.5-flash
+```
+
+### Sketch Generation Configuration
+
+#### Model Requirements
+- The sketch generation uses pre-trained PyTorch models from the informative-drawings project
+- Model checkpoints should be placed in `informative-drawings/checkpoints/`
+- Default model name is `anime_style` but can be changed with `--sketch-model`
+
+#### Available Models
+- Check available models with: `python test_sketch.py`
+- Models should have the structure: `checkpoints/{model_name}/netG_A_latest.pth`
+
+#### Dependencies
+- PyTorch 2.2.0+ with torchvision and torchaudio
+- CUDA support recommended for faster processing
+- CLIP model for feature extraction
 
 # Merging model (should be the strongest)
 MERGE_MODEL=gpt-4-turbo-preview
@@ -125,11 +180,12 @@ MERGE_MODEL=gpt-4-turbo-preview
 
 ## Output Structure
 
-### Single Image Output
+### Caption-Only Output
+#### Single Image
 - Text file with merged caption: `{image_name}.txt`
 - Console output with individual and merged captions
 
-### Batch Processing Output
+#### Batch Processing
 ```
 /output
     /captions
@@ -137,6 +193,34 @@ MERGE_MODEL=gpt-4-turbo-preview
         image002.txt
         image003.txt
         ...
+    captioning_summary.json
+```
+
+### Sketch-Only Output
+```
+/output
+    /sketches
+        /anime_style (or specified model name)
+            image001_out.png
+            image002_out.png
+            image003_out.png
+            ...
+```
+
+### Combined Output (Captions + Sketches)
+```
+/output
+    /captions
+        image001.txt
+        image002.txt
+        image003.txt
+        ...
+    /sketches
+        /anime_style
+            image001_out.png
+            image002_out.png
+            image003_out.png
+            ...
     captioning_summary.json
 ```
 
