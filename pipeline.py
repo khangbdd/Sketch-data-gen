@@ -17,7 +17,7 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 import time
 
-from captioners import OpenAICaptioner, AnthropicCaptioner, GoogleCaptioner, CaptionMerger
+from captioners import OpenAICaptioner, FacebookCaptioner, GoogleCaptioner, CaptionMerger
 
 
 class ImageCaptioningPipeline:
@@ -36,32 +36,32 @@ class ImageCaptioningPipeline:
             if self.config.get('openai_api_key'):
                 self.captioners.append(
                     OpenAICaptioner(
-                        self.config['openai_api_key'],
-                        self.config.get('caption_model_1', 'gpt-4-vision-preview')
+                        self.config['gemini_api_key'],
+                        self.config.get('caption_model_3', 'gemini-2.5-flash')
                     )
                 )
             
-            if self.config.get('anthropic_api_key'):
+            if self.config.get('groq_api_key'):
                 self.captioners.append(
-                    AnthropicCaptioner(
-                        self.config['anthropic_api_key'],
-                        self.config.get('caption_model_2', 'claude-3-sonnet-20240229')
+                    FacebookCaptioner(
+                        self.config['groq_api_key'],
+                        self.config.get('caption_model_2', 'llama-3.1-8b-instant')
                     )
                 )
             
-            if self.config.get('google_api_key'):
+            if self.config.get('gemini_api_key'):
                 self.captioners.append(
                     GoogleCaptioner(
-                        self.config['google_api_key'],
-                        self.config.get('caption_model_3', 'gemini-pro-vision')
+                        self.config['gemini_api_key'],
+                        self.config.get('caption_model_3', 'gemini-2.5-flash')
                     )
                 )
             
             # Initialize merger (using OpenAI by default)
-            if self.config.get('openai_api_key'):
+            if self.config.get('gemini_api_key'):
                 self.merger = CaptionMerger(
-                    self.config['openai_api_key'],
-                    self.config.get('merge_model', 'gpt-4-turbo-preview')
+                    self.config['gemini_api_key'],
+                    self.config.get('merge_model', 'gemini-2.5-flash')
                 )
             
             if not self.captioners:
@@ -222,12 +222,12 @@ def load_config() -> Dict[str, str]:
     
     config = {
         'openai_api_key': os.getenv('OPENAI_API_KEY'),
-        'anthropic_api_key': os.getenv('ANTHROPIC_API_KEY'),
-        'google_api_key': os.getenv('GOOGLE_API_KEY'),
-        'caption_model_1': os.getenv('CAPTION_MODEL_1', 'gpt-4-vision-preview'),
-        'caption_model_2': os.getenv('CAPTION_MODEL_2', 'claude-3-sonnet-20240229'),
-        'caption_model_3': os.getenv('CAPTION_MODEL_3', 'gemini-pro-vision'),
-        'merge_model': os.getenv('MERGE_MODEL', 'gpt-4-turbo-preview')
+        'groq_api_key': os.getenv('GROQ_API_KEY'),
+        'gemini_api_key': os.getenv('GEMINI_API_KEY'),
+        'caption_model_1': os.getenv('CAPTION_MODEL_1', 'openai/gpt-oss-120b'),
+        'caption_model_2': os.getenv('CAPTION_MODEL_2', 'llama-3.1-8b-instant'),
+        'caption_model_3': os.getenv('CAPTION_MODEL_3', 'gemini-2.5-flash'),
+        'merge_model': os.getenv('MERGE_MODEL', 'gemini-2.5-flash')
     }
     
     return config
@@ -265,7 +265,7 @@ def main(input, output, user_caption, caption_source, config_file):
         config = load_config()
         
         # Validate that we have at least one API key
-        if not any([config['openai_api_key'], config['anthropic_api_key'], config['google_api_key']]):
+        if not any([config['groq_api_key'], config['gemini_api_key']]):
             click.echo("Error: No API keys found. Please set up your .env file with at least one API key.")
             click.echo("Copy .env.example to .env and fill in your API keys.")
             sys.exit(1)

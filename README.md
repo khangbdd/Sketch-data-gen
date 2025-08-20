@@ -49,9 +49,9 @@ The pipeline supports the following dataset structure:
    GOOGLE_API_KEY=your_google_api_key_here
    ```
 
-4. **Activate the virtual environment**:
+4. **Activate the conda environment**:
    ```bash
-   source venv/bin/activate
+   conda activate sketch-data
    ```
 
 ## Usage

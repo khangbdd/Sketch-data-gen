@@ -1,12 +1,16 @@
 import base64
+from http import client
 import os
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
-import openai
-import anthropic
-import google.generativeai as genai
+from google import genai
 from PIL import Image
+from groq import Groq
+from openai import OpenAI
+
 import io
+
+from google.genai import types
 
 
 class LLMCaptioner(ABC):
@@ -19,51 +23,58 @@ class LLMCaptioner(ABC):
 
 
 class OpenAICaptioner(LLMCaptioner):
-    def __init__(self, api_key: str, model: str = "gpt-4-vision-preview"):
-        self.client = openai.OpenAI(api_key=api_key)
+    def __init__(self, api_key: str, model: str = "gemma-3-27b-it"):
+        self.api_key = api_key
         self.model = model
-    
+        self.client = genai.Client(api_key=api_key)
+
     def caption_image(self, image_path: str, additional_context: str = "") -> str:
-        """Generate caption using OpenAI's vision model"""
+        """Generate caption using Google's Gemini vision model"""
         try:
-            # Encode image to base64
-            with open(image_path, "rb") as image_file:
-                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+            # 1. Load the image
+            img = Image.open(image_path)
+
+            # 2. Create an in-memory byte stream
+            img_byte_arr = io.BytesIO()
             
-            prompt = f"Provide a detailed, accurate caption for this image. Focus on describing the visual elements, objects, people, actions, setting, colors, and composition."
+            # 3. Save the image to the stream, preserving its original format
+            #    img.format will be 'JPEG', 'PNG', etc.
+            img.save(img_byte_arr, format=img.format)
+            
+            # 4. Get the full, encoded byte content from the stream
+            img_bytes = img_byte_arr.getvalue()
+
+            # 5. Set the correct MIME type based on the image's actual format
+            mime_type = f"image/{img.format.lower()}"
+                
+            prompt = f"Describe this image in detail. Include information about objects, people, actions, setting, colors, and composition. Be specific and comprehensive."
             if additional_context:
                 prompt += f" Additional context: {additional_context}"
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
+            response = self.client.models.generate_content(
+                model= self.model,
+                contents= [
+                    prompt,
+                    types.Part.from_bytes(data = img_bytes, mime_type=mime_type)
                 ],
-                max_tokens=300
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                ),
             )
-            return response.choices[0].message.content.strip()
+            print(response.text)
+            return response.text
         except Exception as e:
-            return f"Error generating OpenAI caption: {str(e)}"
+            return f"Error generating Google caption: {str(e)}"
 
 
-class AnthropicCaptioner(LLMCaptioner):
-    def __init__(self, api_key: str, model: str = "claude-3-sonnet-20240229"):
-        self.client = anthropic.Anthropic(api_key=api_key)
+class FacebookCaptioner(LLMCaptioner):
+    def __init__(self, api_key: str, model: str = "llama-3.1-8b-instant"):
+        self.api_key = api_key
+        self.client = Groq(api_key=api_key)
         self.model = model
     
     def caption_image(self, image_path: str, additional_context: str = "") -> str:
-        """Generate caption using Anthropic's Claude vision model"""
+        """Generate caption using Facebook's LLaMA vision model"""
         try:
             # Read and encode image
             with open(image_path, "rb") as image_file:
@@ -80,48 +91,75 @@ class AnthropicCaptioner(LLMCaptioner):
             if additional_context:
                 prompt += f" Additional context: {additional_context}"
             
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=300,
+            chat_completion = self.client.chat.completions.create(
                 messages=[
                     {
                         "role": "user",
                         "content": [
                             {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": image_type,
-                                    "data": image_data,
+                                "type":"text",
+                                "text": prompt,
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{image_type};base64,{image_data}",
                                 },
                             },
-                            {"type": "text", "text": prompt}
-                        ],
+                        ]
                     }
                 ],
+                model= self.model
             )
-            return message.content[0].text.strip()
+            content = chat_completion.choices[0].message.content
+            print(chat_completion.choices[0].message.content)
+            return content
         except Exception as e:
-            return f"Error generating Anthropic caption: {str(e)}"
+            return f"Error generating Llama caption: {str(e)}"
 
 
 class GoogleCaptioner(LLMCaptioner):
+
     def __init__(self, api_key: str, model: str = "gemini-pro-vision"):
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
-    
+        self.api_key = api_key
+        self.model = model
+        self.client = genai.Client(api_key=api_key)
+
     def caption_image(self, image_path: str, additional_context: str = "") -> str:
         """Generate caption using Google's Gemini vision model"""
         try:
-            # Load image
+            # 1. Load the image
             img = Image.open(image_path)
+
+            # 2. Create an in-memory byte stream
+            img_byte_arr = io.BytesIO()
             
+            # 3. Save the image to the stream, preserving its original format
+            #    img.format will be 'JPEG', 'PNG', etc.
+            img.save(img_byte_arr, format=img.format)
+            
+            # 4. Get the full, encoded byte content from the stream
+            img_bytes = img_byte_arr.getvalue()
+
+            # 5. Set the correct MIME type based on the image's actual format
+            mime_type = f"image/{img.format.lower()}"
+                
             prompt = f"Describe this image in detail. Include information about objects, people, actions, setting, colors, and composition. Be specific and comprehensive."
             if additional_context:
                 prompt += f" Additional context: {additional_context}"
             
-            response = self.model.generate_content([prompt, img])
-            return response.text.strip()
+            response = self.client.models.generate_content(
+                model= self.model,
+                contents= [
+                    prompt,
+                    types.Part.from_bytes(data = img_bytes, mime_type=mime_type)
+                ],
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                ),
+            )
+            print(response.text)
+            return response.text
         except Exception as e:
             return f"Error generating Google caption: {str(e)}"
 
@@ -130,8 +168,9 @@ class CaptionMerger:
     """Merges multiple captions into a single comprehensive caption"""
     
     def __init__(self, api_key: str, model: str = "gpt-4-turbo-preview"):
-        self.client = openai.OpenAI(api_key=api_key)
+        self.api_key = api_key
         self.model = model
+        self.client = genai.Client(api_key=api_key)
     
     def merge_captions(self, captions: list, user_caption: str = "", image_name: str = "") -> str:
         """Merge multiple captions into one comprehensive caption"""
@@ -156,13 +195,14 @@ Instructions:
 
 Provide only the merged caption as your response."""
 
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=400
+            response = self.client.models.generate_content(
+                model= self.model,
+                contents= prompt,
+                config=types.GenerateContentConfig(
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
+                ),
             )
-            return response.choices[0].message.content.strip()
+            print(response.text)
+            return response.text
         except Exception as e:
             return f"Error merging captions: {str(e)}"

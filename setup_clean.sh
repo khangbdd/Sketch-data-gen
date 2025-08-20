@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# Image Captioning Pipeline Setup Script
+# Image Captioning Pipeline Clean Setup Script
+# This script removes existing environments and sets up fresh
 
-echo "Setting up Image Captioning Pipeline..."
+echo "Clean setup for Image Captioning Pipeline..."
 
 # Check if conda is installed
 if ! command -v conda &> /dev/null; then
@@ -14,8 +15,18 @@ fi
 # Initialize conda for bash/zsh
 eval "$(conda shell.bash hook)"
 
-# Create conda environment
-echo "Creating conda environment 'sketch-data'..."
+# Remove existing conda environment if it exists
+echo "Removing existing 'sketch-data' environment if it exists..."
+conda env remove -n sketch-data -y 2>/dev/null || echo "No existing environment to remove."
+
+# Remove old venv if it exists
+if [ -d "venv" ]; then
+    echo "Removing old virtual environment..."
+    rm -rf venv
+fi
+
+# Create fresh conda environment
+echo "Creating fresh conda environment 'sketch-data'..."
 conda create -n sketch-data python=3.9 -y
 
 # Activate conda environment
@@ -43,7 +54,7 @@ fi
 chmod +x pipeline.py
 
 echo ""
-echo "Setup completed successfully!"
+echo "Clean setup completed successfully!"
 echo ""
 echo "Next steps:"
 echo "1. Edit .env file with your API keys"
