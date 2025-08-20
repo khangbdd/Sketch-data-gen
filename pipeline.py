@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Image Captioning and Sketch Generation Pipeline
+Image Captioning Pipeline
 
 A comprehensive pipeline that uses multiple LLM models to generate and merge image captions.
 Also supports sketch generation using the informative-drawings model.
@@ -18,16 +18,8 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 import time
 
+from captioners import OpenAICaptioner, FacebookCaptioner, GoogleCaptioner, CaptionMerger
 from sketch_generator import SketchGenerator
-
-# Conditional imports for captioning (only when needed)
-def import_captioners():
-    """Import captioning modules only when needed"""
-    try:
-        from captioners import OpenAICaptioner, FacebookCaptioner, GoogleCaptioner, CaptionMerger
-        return OpenAICaptioner, FacebookCaptioner, GoogleCaptioner, CaptionMerger
-    except ImportError as e:
-        raise ImportError(f"Failed to import captioning modules: {e}. Please check your environment setup.")
 
 
 class ImageCaptioningPipeline:
@@ -37,8 +29,6 @@ class ImageCaptioningPipeline:
         self.config = config
         self.captioners = []
         self.merger = None
-        # Import captioning modules
-        self.OpenAICaptioner, self.FacebookCaptioner, self.GoogleCaptioner, self.CaptionMerger = import_captioners()
         self._initialize_models()
     
     def _initialize_models(self):
@@ -47,7 +37,7 @@ class ImageCaptioningPipeline:
             # Initialize captioners
             if self.config.get('openai_api_key'):
                 self.captioners.append(
-                    self.OpenAICaptioner(
+                    OpenAICaptioner(
                         self.config['gemini_api_key'],
                         self.config.get('caption_model_3', 'gemini-2.5-flash')
                     )
@@ -55,7 +45,7 @@ class ImageCaptioningPipeline:
             
             if self.config.get('groq_api_key'):
                 self.captioners.append(
-                    self.FacebookCaptioner(
+                    FacebookCaptioner(
                         self.config['groq_api_key'],
                         self.config.get('caption_model_2', 'llama-3.1-8b-instant')
                     )
@@ -63,7 +53,7 @@ class ImageCaptioningPipeline:
             
             if self.config.get('gemini_api_key'):
                 self.captioners.append(
-                    self.GoogleCaptioner(
+                    GoogleCaptioner(
                         self.config['gemini_api_key'],
                         self.config.get('caption_model_3', 'gemini-2.5-flash')
                     )
@@ -71,7 +61,7 @@ class ImageCaptioningPipeline:
             
             # Initialize merger (using OpenAI by default)
             if self.config.get('gemini_api_key'):
-                self.merger = self.CaptionMerger(
+                self.merger = CaptionMerger(
                     self.config['gemini_api_key'],
                     self.config.get('merge_model', 'gemini-2.5-flash')
                 )
@@ -226,6 +216,95 @@ class ImageCaptioningPipeline:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         
         print(f"Summary saved to: {summary_file}")
+
+
+class CombinedPipeline:
+    """Combined pipeline for both captioning and sketch generation"""
+    
+    def __init__(self, config: Dict[str, str], sketch_model: str = "anime_style"):
+        self.captioning_pipeline = ImageCaptioningPipeline(config)
+        self.sketch_generator = SketchGenerator(model_name=sketch_model)
+        
+    def process_with_sketches(self, input_path: str, output_dir: str, 
+                            caption_source: str = "folder", user_caption: str = "",
+                            generate_sketches: bool = True, sketch_kwargs: Dict = None) -> Dict:
+        """Process images with both captioning and sketch generation"""
+        input_path = Path(input_path)
+        output_path = Path(output_dir) if output_dir else Path("output")
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        results = {
+            "input_path": str(input_path),
+            "output_path": str(output_path),
+            "captioning_results": None,
+            "sketch_results": None,
+            "success": False
+        }
+        
+        try:
+            # Generate captions
+            click.echo("🖊️  Starting caption generation...")
+            if input_path.is_file():
+                if caption_source == 'manual':
+                    user_context = user_caption
+                elif caption_source == 'filename':
+                    user_context = input_path.stem
+                else:
+                    user_context = input_path.parent.name
+                
+                caption_result = self.captioning_pipeline.process_single_image(
+                    str(input_path), user_context, str(output_path)
+                )
+                results["captioning_results"] = [caption_result]
+            else:
+                caption_results = self.captioning_pipeline.process_image_folder(
+                    str(input_path), str(output_path), caption_source
+                )
+                results["captioning_results"] = caption_results
+            
+            click.echo("✅ Caption generation completed!")
+            
+            # Generate sketches if requested
+            if generate_sketches:
+                click.echo("🎨 Starting sketch generation...")
+                
+                # Check if model is available
+                if not self.sketch_generator.check_model_availability():
+                    available_models = self.sketch_generator.list_available_models()
+                    if available_models:
+                        click.echo(f"⚠️  Model '{self.sketch_generator.model_name}' not found.")
+                        click.echo(f"Available models: {', '.join(available_models)}")
+                    else:
+                        click.echo("⚠️  No sketch generation models found. Skipping sketch generation.")
+                        click.echo("Please ensure model checkpoints are available in the informative-drawings/checkpoints directory.")
+                    return results
+                
+                sketch_kwargs = sketch_kwargs or {}
+                sketch_output_dir = output_path / "sketches"
+                
+                if input_path.is_file():
+                    sketch_result = self.sketch_generator.process_single_image(
+                        str(input_path), str(sketch_output_dir), **sketch_kwargs
+                    )
+                    results["sketch_results"] = sketch_result
+                else:
+                    sketch_result = self.sketch_generator.generate_sketches(
+                        str(input_path), str(sketch_output_dir), **sketch_kwargs
+                    )
+                    results["sketch_results"] = sketch_result
+                
+                if results["sketch_results"]["success"]:
+                    click.echo("✅ Sketch generation completed!")
+                else:
+                    click.echo(f"❌ Sketch generation failed: {results['sketch_results']['error']}")
+            
+            results["success"] = True
+            return results
+            
+        except Exception as e:
+            results["error"] = str(e)
+            click.echo(f"❌ Pipeline failed: {str(e)}")
+            return results
 
 
 def load_config() -> Dict[str, str]:
