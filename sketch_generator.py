@@ -51,12 +51,16 @@ class SketchGenerator:
         # Create output directory
         output_path.mkdir(parents=True, exist_ok=True)
         
+        # Ensure we use absolute paths to avoid permission issues
+        abs_input_path = input_path.resolve()
+        abs_output_path = output_path.resolve()
+        
         # Prepare command arguments
         cmd_args = [
             sys.executable, str(self.test_script),
             "--name", self.model_name,
-            "--dataroot", str(input_path),
-            "--results_dir", str(output_path),
+            "--dataroot", str(abs_input_path),
+            "--results_dir", str(abs_output_path),
             "--checkpoints_dir", self.checkpoints_dir,
         ]
         
@@ -66,8 +70,8 @@ class SketchGenerator:
                 cmd_args.extend([f"--{key}", str(value)])
         
         try:
-            print(f"Generating sketches for images in: {input_path}")
-            print(f"Output directory: {output_path}")
+            print(f"Generating sketches for images in: {abs_input_path}")
+            print(f"Output directory: {abs_output_path}")
             print(f"Command: {' '.join(cmd_args)}")
             
             # Change to informative-drawings directory
@@ -87,7 +91,7 @@ class SketchGenerator:
             
             if result.returncode == 0:
                 # Count generated files
-                sketch_dir = output_path / self.model_name
+                sketch_dir = abs_output_path / self.model_name
                 if sketch_dir.exists():
                     sketch_files = list(sketch_dir.glob("*_out.png"))
                     return {
