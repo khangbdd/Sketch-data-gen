@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List
 import shutil
+import torch
 
 
 class SketchGenerator:
@@ -29,6 +30,36 @@ class SketchGenerator:
         self.test_script = self.informative_drawings_dir / "test.py"
         if not self.test_script.exists():
             raise FileNotFoundError(f"Test script not found: {self.test_script}")
+    
+    def check_cuda_availability(self) -> Dict[str, any]:
+        """Check if CUDA is available for the sketch generation model"""
+        try:
+            cuda_available = torch.cuda.is_available()
+            device_count = torch.cuda.device_count() if cuda_available else 0
+            
+            return {
+                "cuda_available": cuda_available,
+                "device_count": device_count,
+                "error": None
+            }
+        except Exception as e:
+            return {
+                "cuda_available": False,
+                "device_count": 0,
+                "error": str(e)
+            }
+    
+    def _is_cuda_error(self, stderr: str) -> bool:
+        """Check if the error is related to CUDA"""
+        cuda_error_indicators = [
+            "CUDA initialization",
+            "cudaGetDeviceCount",
+            "cuda functions",
+            "RuntimeError: Unexpected error from cudaGetDeviceCount",
+            "system has unsupported display driver",
+            "Error 803"
+        ]
+        return any(indicator in stderr for indicator in cuda_error_indicators)
     
     def generate_sketches(self, input_dir: str, output_dir: str, **kwargs) -> Dict:
         """
@@ -75,6 +106,17 @@ class SketchGenerator:
             print(f"Output directory: {abs_output_path}")
             print(f"Working directory: {self.informative_drawings_dir}")
             print(f"Command: {' '.join(cmd_args)}")
+            
+            # Check CUDA availability before running
+            cuda_status = self.check_cuda_availability()
+            if not cuda_status["cuda_available"]:
+                warning_msg = "⚠️  CUDA Warning: CUDA is not available on this system."
+                if cuda_status["error"]:
+                    warning_msg += f" Error: {cuda_status['error']}"
+                warning_msg += "\nThe informative-drawings model requires CUDA. This may cause the sketch generation to fail."
+                print(warning_msg)
+            else:
+                print(f"✅ CUDA is available with {cuda_status['device_count']} device(s)")
             
             # Verify input directory exists and has images
             if not abs_input_path.exists():
@@ -145,17 +187,29 @@ class SketchGenerator:
                     }
             else:
                 error_msg = f"Sketch generation failed with return code {result.returncode}"
-                if result.stderr:
-                    error_msg += f"\nStderr: {result.stderr}"
-                if result.stdout:
-                    error_msg += f"\nStdout: {result.stdout}"
+                
+                # Check if this is a CUDA-related error
+                if self._is_cuda_error(result.stderr):
+                    error_msg = "❌ CUDA Error: The informative-drawings model requires CUDA to run, but CUDA is not available or properly configured on this system.\n\n"
+                    error_msg += "Possible solutions:\n"
+                    error_msg += "1. Install NVIDIA GPU drivers if you have an NVIDIA GPU\n"
+                    error_msg += "2. Install CUDA toolkit (https://developer.nvidia.com/cuda-downloads)\n"
+                    error_msg += "3. Run on a system with CUDA support\n"
+                    error_msg += "4. Use a cloud service with GPU support (e.g., Google Colab, AWS EC2 with GPU)\n\n"
+                    error_msg += f"Original error: {result.stderr}"
+                else:
+                    if result.stderr:
+                        error_msg += f"\nStderr: {result.stderr}"
+                    if result.stdout:
+                        error_msg += f"\nStdout: {result.stdout}"
                 
                 return {
                     "success": False,
                     "error": error_msg,
                     "stdout": result.stdout,
                     "stderr": result.stderr,
-                    "return_code": result.returncode
+                    "return_code": result.returncode,
+                    "is_cuda_error": self._is_cuda_error(result.stderr)
                 }
                 
         except Exception as e:
@@ -213,6 +267,29 @@ class SketchGenerator:
             if temp_input_dir.exists():
                 shutil.rmtree(temp_input_dir)
     
+    def check_system_requirements(self) -> Dict[str, any]:
+        """Check if the system meets requirements for sketch generation"""
+        requirements = {
+            "informative_drawings_exists": self.informative_drawings_dir.exists(),
+            "test_script_exists": self.test_script.exists(),
+            "model_available": self.check_model_availability(),
+            "available_models": self.list_available_models(),
+        }
+        
+        # Add CUDA status
+        cuda_status = self.check_cuda_availability()
+        requirements.update(cuda_status)
+        
+        # Overall status
+        requirements["ready_for_generation"] = (
+            requirements["informative_drawings_exists"] and
+            requirements["test_script_exists"] and
+            requirements["model_available"] and
+            requirements["cuda_available"]
+        )
+        
+        return requirements
+
     def check_model_availability(self) -> bool:
         """Check if the required model checkpoints are available"""
         model_checkpoint = Path(self.checkpoints_dir) / self.model_name / "netG_A_latest.pth"
