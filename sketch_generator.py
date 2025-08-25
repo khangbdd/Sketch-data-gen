@@ -66,17 +66,6 @@ class SketchGenerator:
             "--no_flip",  # Don't flip images for data augmentation
         ]
         
-        # Check if CUDA is available and add cuda flag if it is
-        try:
-            import torch
-            if torch.cuda.is_available():
-                cmd_args.extend(["--cuda"])
-                print("CUDA detected, using GPU acceleration")
-            else:
-                print("CUDA not available, using CPU (this will be slower)")
-        except ImportError:
-            print("PyTorch not available, assuming CPU mode")
-        
         # Add additional arguments
         for key, value in kwargs.items():
             if value is not None:
