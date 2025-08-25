@@ -62,6 +62,8 @@ class SketchGenerator:
             "--dataroot", str(abs_input_path),
             "--results_dir", str(abs_output_path),
             "--checkpoints_dir", self.checkpoints_dir,
+            "--how_many", "99999",  # Process all images (large number)
+            "--no_flip",  # Don't flip images for data augmentation
         ]
         
         # Add additional arguments
