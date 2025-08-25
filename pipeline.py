@@ -374,8 +374,14 @@ def main(input, output, user_caption, caption_source, config_file, generate_sket
             click.echo("🎨 Sketch generation mode")
             try:
                 sketch_generator = SketchGenerator(model_name=sketch_model)
-                output_dir = Path(output) if output else Path("output")
+                # Ensure we use absolute paths
+                if output:
+                    output_dir = Path(output).resolve()
+                else:
+                    output_dir = Path.cwd() / "output"
                 output_dir.mkdir(parents=True, exist_ok=True)
+                
+                click.echo(f"Output directory: {output_dir}")
                 
                 if input_path.is_file():
                     result = sketch_generator.process_single_image(str(input_path), str(output_dir))

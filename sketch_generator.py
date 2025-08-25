@@ -66,6 +66,17 @@ class SketchGenerator:
             "--no_flip",  # Don't flip images for data augmentation
         ]
         
+        # Check if CUDA is available and add cuda flag if it is
+        try:
+            import torch
+            if torch.cuda.is_available():
+                cmd_args.extend(["--cuda"])
+                print("CUDA detected, using GPU acceleration")
+            else:
+                print("CUDA not available, using CPU (this will be slower)")
+        except ImportError:
+            print("PyTorch not available, assuming CPU mode")
+        
         # Add additional arguments
         for key, value in kwargs.items():
             if value is not None:
@@ -74,7 +85,40 @@ class SketchGenerator:
         try:
             print(f"Generating sketches for images in: {abs_input_path}")
             print(f"Output directory: {abs_output_path}")
+            print(f"Working directory: {self.informative_drawings_dir}")
             print(f"Command: {' '.join(cmd_args)}")
+            
+            # Verify input directory exists and has images
+            if not abs_input_path.exists():
+                return {
+                    "success": False,
+                    "error": f"Input directory does not exist: {abs_input_path}"
+                }
+            
+            # Check for image files
+            image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff'}
+            image_files = []
+            for ext in image_extensions:
+                image_files.extend(abs_input_path.glob(f'*{ext}'))
+                image_files.extend(abs_input_path.glob(f'*{ext.upper()}'))
+            
+            if not image_files:
+                return {
+                    "success": False,
+                    "error": f"No image files found in: {abs_input_path}"
+                }
+            
+            print(f"Found {len(image_files)} image files to process")
+            
+            # Verify model checkpoint exists
+            model_checkpoint = Path(self.checkpoints_dir) / self.model_name / "netG_A_latest.pth"
+            if not model_checkpoint.exists():
+                return {
+                    "success": False,
+                    "error": f"Model checkpoint not found: {model_checkpoint}. Available models: {self.list_available_models()}"
+                }
+            
+            print(f"Using model checkpoint: {model_checkpoint}")
             
             # Change to informative-drawings directory
             original_cwd = os.getcwd()
@@ -112,11 +156,18 @@ class SketchGenerator:
                         "stderr": result.stderr
                     }
             else:
+                error_msg = f"Sketch generation failed with return code {result.returncode}"
+                if result.stderr:
+                    error_msg += f"\nStderr: {result.stderr}"
+                if result.stdout:
+                    error_msg += f"\nStdout: {result.stdout}"
+                
                 return {
                     "success": False,
-                    "error": f"Sketch generation failed with return code {result.returncode}",
+                    "error": error_msg,
                     "stdout": result.stdout,
-                    "stderr": result.stderr
+                    "stderr": result.stderr,
+                    "return_code": result.returncode
                 }
                 
         except Exception as e:
