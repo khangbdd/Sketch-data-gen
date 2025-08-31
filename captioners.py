@@ -47,7 +47,7 @@ class OpenAICaptioner(LLMCaptioner):
             # 5. Set the correct MIME type based on the image's actual format
             mime_type = f"image/{img.format.lower()}"
                 
-            prompt = f"Describe this image in detail. Include information about objects, people, actions, setting, colors, and composition. Be specific and comprehensive."
+            prompt = f"Describe this image in detail (Focus on the main garment). Include information about objects, setting, colors, pattern, and composition. Be specific and comprehensive."
             if additional_context:
                 prompt += f" Additional context: {additional_context}"
             
@@ -87,7 +87,7 @@ class FacebookCaptioner(LLMCaptioner):
             elif image_path.lower().endswith('.webp'):
                 image_type = "image/webp"
             
-            prompt = f"Analyze this image and provide a comprehensive caption describing what you see. Include details about objects, people, actions, setting, colors, and overall composition."
+            prompt = f"Describe this image in detail (Focus on the main garment). Include information about objects, setting, colors, pattern, and composition. Be specific and comprehensive."
             if additional_context:
                 prompt += f" Additional context: {additional_context}"
             
@@ -144,7 +144,7 @@ class GoogleCaptioner(LLMCaptioner):
             # 5. Set the correct MIME type based on the image's actual format
             mime_type = f"image/{img.format.lower()}"
                 
-            prompt = f"Describe this image in detail. Include information about objects, people, actions, setting, colors, and composition. Be specific and comprehensive."
+            prompt = f"Describe this image in detail (Focus on the main garment). Include information about objects, setting, colors, pattern, and composition. Be specific and comprehensive."
             if additional_context:
                 prompt += f" Additional context: {additional_context}"
             
